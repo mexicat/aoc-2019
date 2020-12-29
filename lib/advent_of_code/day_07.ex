@@ -29,12 +29,7 @@ defmodule AdventOfCode.Day07 do
 
     Enum.reduce_while(Stream.cycle(0..4), {0, amps}, fn i, {acc, amps} ->
       amp = Enum.at(amps, i)
-
-      {result, new_amp} =
-        amp
-        |> Intcode.set_input(acc)
-        |> Intcode.run_until_output()
-        |> Enum.find(fn {r, _} -> r == :out || r == :halt end)
+      {result, new_amp} = amp |> Intcode.set_input(acc) |> Intcode.run_until_output()
 
       case result do
         :out ->

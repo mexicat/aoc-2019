@@ -23,43 +23,31 @@ defmodule Intcode do
   end
 
   def run(intcode) do
-    Stream.iterate({:cont, intcode}, fn
-      {:out, intcode} ->
-        next(intcode)
-
-      {:cont, intcode} ->
-        next(intcode)
-
-      {:halt, intcode} ->
-        # IO.inspect(intcode)
-        {:halt, intcode}
-    end)
-    |> Enum.find(&(elem(&1, 0) == :halt))
-    |> elem(1)
+    case next(intcode) do
+      {:cont, intcode} -> run(intcode)
+      {:out, intcode} -> run(intcode)
+      {:halt, intcode} -> intcode
+    end
   end
 
   def run_until_output(intcode) do
-    Stream.iterate({:cont, intcode}, fn
-      {:out, intcode} ->
-        {:out, intcode}
-
-      {:cont, intcode} ->
-        next(intcode)
-
-      {:halt, intcode} ->
-        {:halt, intcode}
-    end)
+    case next(intcode) do
+      {:cont, intcode} -> run_until_output(intcode)
+      {:out, intcode} -> {:out, intcode}
+      {:halt, intcode} -> {:halt, intcode}
+    end
   end
 
   def next(intcode = %{ops: ops, at: at}) do
     {operation, modes} = ops |> Enum.at(at) |> parse_op_and_mode()
-    intcode |> op(operation, modes)
+    op(intcode, operation, modes)
   end
 
   # ADD
   def op(intcode = %{ops: ops, at: at}, @add, [m1, m2]) do
     result = get_param(ops, at + 1, m1) + get_param(ops, at + 2, m2)
     ops = set_param(ops, at + 3, result)
+
     {:cont, %{intcode | ops: ops, at: at + 4}}
   end
 
@@ -67,6 +55,7 @@ defmodule Intcode do
   def op(intcode = %{ops: ops, at: at}, @multiply, [m1, m2]) do
     result = get_param(ops, at + 1, m1) * get_param(ops, at + 2, m2)
     ops = set_param(ops, at + 3, result)
+
     {:cont, %{intcode | ops: ops, at: at + 4}}
   end
 
@@ -89,6 +78,7 @@ defmodule Intcode do
   def op(intcode = %{ops: ops, at: at, output: output}, @output, _) do
     res = get_param(ops, at + 1)
     output = [res | output]
+
     {:out, %{intcode | output: output, at: at + 2}}
   end
 
