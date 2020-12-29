@@ -1,5 +1,5 @@
 defmodule Intcode do
-  defstruct ops: [], at: 0, input: nil, output: []
+  defstruct ops: [], at: 0, input: nil, output: [], phase: nil
 
   @add 1
   @multiply 2
@@ -14,20 +14,45 @@ defmodule Intcode do
   @position 0
   @immediate 1
 
-  def new(ops, input \\ nil) do
-    %Intcode{ops: ops, at: 0, input: input}
+  def new(ops, input \\ nil, phase \\ nil) do
+    %Intcode{ops: ops, at: 0, input: input, phase: phase}
+  end
+
+  def set_input(intcode, input) do
+    %{intcode | input: input}
   end
 
   def run(intcode) do
-    next(intcode)
+    Stream.iterate({:cont, intcode}, fn
+      {:out, intcode} ->
+        next(intcode)
+
+      {:cont, intcode} ->
+        next(intcode)
+
+      {:halt, intcode} ->
+        # IO.inspect(intcode)
+        {:halt, intcode}
+    end)
+    |> Enum.find(&(elem(&1, 0) == :halt))
+    |> elem(1)
+  end
+
+  def run_until_output(intcode) do
+    Stream.iterate({:cont, intcode}, fn
+      {:out, intcode} ->
+        {:out, intcode}
+
+      {:cont, intcode} ->
+        next(intcode)
+
+      {:halt, intcode} ->
+        {:halt, intcode}
+    end)
   end
 
   def next(intcode = %{ops: ops, at: at}) do
     {operation, modes} = ops |> Enum.at(at) |> parse_op_and_mode()
-
-    # IO.inspect(intcode)
-    # IO.inspect({operation, modes})
-
     intcode |> op(operation, modes)
   end
 
@@ -35,28 +60,36 @@ defmodule Intcode do
   def op(intcode = %{ops: ops, at: at}, @add, [m1, m2]) do
     result = get_param(ops, at + 1, m1) + get_param(ops, at + 2, m2)
     ops = set_param(ops, at + 3, result)
-    next(%{intcode | ops: ops, at: at + 4})
+    {:cont, %{intcode | ops: ops, at: at + 4}}
   end
 
   # MULTIPLY
   def op(intcode = %{ops: ops, at: at}, @multiply, [m1, m2]) do
     result = get_param(ops, at + 1, m1) * get_param(ops, at + 2, m2)
     ops = set_param(ops, at + 3, result)
-    next(%{intcode | ops: ops, at: at + 4})
+    {:cont, %{intcode | ops: ops, at: at + 4}}
   end
 
   # INPUT
-  def op(intcode = %{ops: ops, at: at, input: input}, @input, _) do
+  def op(intcode = %{ops: ops, at: at, input: input, phase: phase}, @input, _) do
     i = get_param(ops, at + 1, @immediate)
-    ops = List.replace_at(ops, i, input)
-    next(%{intcode | ops: ops, at: at + 2})
+
+    case phase do
+      nil ->
+        ops = List.replace_at(ops, i, input)
+        {:cont, %{intcode | ops: ops, at: at + 2}}
+
+      n ->
+        ops = List.replace_at(ops, i, n)
+        {:cont, %{intcode | ops: ops, phase: nil, at: at + 2}}
+    end
   end
 
   # OUTPUT
   def op(intcode = %{ops: ops, at: at, output: output}, @output, _) do
     res = get_param(ops, at + 1)
     output = [res | output]
-    next(%{intcode | output: output, at: at + 2})
+    {:out, %{intcode | output: output, at: at + 2}}
   end
 
   # JUMP IF TRUE
@@ -67,7 +100,7 @@ defmodule Intcode do
         _ -> get_param(ops, at + 2, m2)
       end
 
-    next(%{intcode | at: new_at})
+    {:cont, %{intcode | at: new_at}}
   end
 
   # JUMP IF FALSE
@@ -78,7 +111,7 @@ defmodule Intcode do
         _ -> at + 3
       end
 
-    next(%{intcode | at: new_at})
+    {:cont, %{intcode | at: new_at}}
   end
 
   # LESS THAN
@@ -89,7 +122,7 @@ defmodule Intcode do
         false -> set_param(ops, at + 3, 0)
       end
 
-    next(%{intcode | ops: ops, at: at + 4})
+    {:cont, %{intcode | ops: ops, at: at + 4}}
   end
 
   # EQUALS
@@ -100,12 +133,12 @@ defmodule Intcode do
         false -> set_param(ops, at + 3, 0)
       end
 
-    next(%{intcode | ops: ops, at: at + 4})
+    {:cont, %{intcode | ops: ops, at: at + 4}}
   end
 
   # HALT
   def op(intcode, @halt, _) do
-    intcode
+    {:halt, intcode}
   end
 
   def parse_op_and_mode(instruction) do
